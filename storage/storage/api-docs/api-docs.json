@@ -1,0 +1,1043 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Todo List API",
+        "description": "A comprehensive task management API with hierarchical task support",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "/api/v1",
+            "description": "API v1"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Tasks",
+            "description": "Task management endpoints"
+        },
+        {
+            "name": "Authentication",
+            "description": "User authentication endpoints"
+        }
+    ],
+    "paths": {
+        "/tasks": {
+            "get": {
+                "summary": "List tasks",
+                "description": "Get a paginated list of tasks for the authenticated user with filtering and sorting options",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter tasks by status",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "todo",
+                                "done"
+                            ],
+                            "example": "todo"
+                        }
+                    },
+                    {
+                        "name": "priority",
+                        "in": "query",
+                        "description": "Filter by priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Lowest)",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 5,
+                            "example": 3
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Search in title and description (minimum 2 characters)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 255,
+                            "example": "meeting"
+                        }
+                    },
+                    {
+                        "name": "parent_id",
+                        "in": "query",
+                        "description": "Filter by parent task ID",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "example": 123
+                        }
+                    },
+                    {
+                        "name": "root_tasks_only",
+                        "in": "query",
+                        "description": "Show only root tasks (tasks without parent)",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "example": true
+                        }
+                    },
+                    {
+                        "name": "subtasks_only",
+                        "in": "query",
+                        "description": "Show only subtasks (tasks with parent)",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "example": false
+                        }
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "description": "Sort format: field:direction,field:direction (available fields: title, priority, status, created_at, updated_at, completed_at)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "example": "priority:desc,created_at:asc"
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "description": "Number of items per page",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 15,
+                            "example": 15
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "Page number",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "default": 1,
+                            "example": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tasks retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Task"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/PaginationMeta"
+                                        },
+                                        "links": {
+                                            "$ref": "#/components/schemas/PaginationLinks"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Create a new task",
+                "description": "Create a new task for the authenticated user",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateTaskRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Task created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Task"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/tasks/{task}": {
+            "get": {
+                "summary": "Get a specific task",
+                "description": "Retrieve a specific task by ID for the authenticated user",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "description": "Task ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Task"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            },
+            "put": {
+                "summary": "Update a task",
+                "description": "Update an existing task for the authenticated user",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "description": "Task ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateTaskRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Task updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Task"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete a task",
+                "description": "Delete a specific task for the authenticated user",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "description": "Task ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Task deleted successfully."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/tasks/{task}/complete": {
+            "post": {
+                "summary": "Mark task as completed",
+                "description": "Mark a specific task as completed for the authenticated user",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "description": "Task ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task marked as completed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Task"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Task marked as completed successfully."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/BadRequest"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/tasks/stats": {
+            "get": {
+                "summary": "Get task statistics",
+                "description": "Get task statistics for the authenticated user",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task statistics retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/TaskStats"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    }
+                }
+            }
+        },
+        "/tasks/search": {
+            "get": {
+                "summary": "Search tasks",
+                "description": "Search tasks by text in title and description",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Search query (minimum 2 characters)",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 255,
+                            "example": "meeting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search results retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Task"
+                                            }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "count": {
+                                                    "type": "integer",
+                                                    "example": 5
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    }
+                }
+            }
+        },
+        "/tasks/{task}/children": {
+            "get": {
+                "summary": "Get task children",
+                "description": "Get all child tasks (subtasks) of a specific task",
+                "tags": [
+                    "Tasks"
+                ],
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "task",
+                        "in": "path",
+                        "description": "Parent task ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "example": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Child tasks retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Task"
+                                            }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "count": {
+                                                    "type": "integer",
+                                                    "example": 3
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        },
+        "schemas": {
+            "Task": {
+                "type": "object",
+                "title": "Task",
+                "description": "Task object representing a todo item with hierarchical support",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Unique task identifier",
+                        "example": 1
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "ID of the user who owns this task",
+                        "example": 1
+                    },
+                    "parent_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Parent task ID for hierarchical structure (null for root tasks)",
+                        "example": null
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Task title",
+                        "maxLength": 255,
+                        "example": "Complete project documentation"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Detailed task description",
+                        "example": "Write comprehensive API documentation for the todo list project"
+                    },
+                    "status": {
+                        "type": "object",
+                        "description": "Task status with value and human-readable label",
+                        "properties": {
+                            "value": {
+                                "type": "string",
+                                "enum": [
+                                    "todo",
+                                    "done"
+                                ],
+                                "example": "todo"
+                            },
+                            "label": {
+                                "type": "string",
+                                "example": "To Do"
+                            }
+                        }
+                    },
+                    "priority": {
+                        "type": "object",
+                        "description": "Task priority (1=Critical, 2=High, 3=Medium, 4=Low, 5=Lowest)",
+                        "properties": {
+                            "value": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 5,
+                                "example": 3
+                            },
+                            "label": {
+                                "type": "string",
+                                "example": "Medium"
+                            },
+                            "color": {
+                                "type": "string",
+                                "example": "#d97706"
+                            }
+                        }
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Task creation timestamp",
+                        "example": "2024-01-15T10:30:00Z"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Last modification timestamp",
+                        "example": "2024-01-15T15:45:00Z"
+                    },
+                    "completed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Task completion timestamp (null if not completed)",
+                        "example": null
+                    }
+                },
+                "required": [
+                    "id",
+                    "user_id",
+                    "title",
+                    "status",
+                    "priority",
+                    "created_at",
+                    "updated_at"
+                ]
+            },
+            "CreateTaskRequest": {
+                "type": "object",
+                "title": "Create Task Request",
+                "description": "Schema for creating a new task",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Task title",
+                        "maxLength": 255,
+                        "example": "Complete project documentation"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Task description",
+                        "example": "Write comprehensive API documentation for the todo list project"
+                    },
+                    "priority": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "default": 3,
+                        "description": "Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Lowest)",
+                        "example": 2
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "todo",
+                            "done"
+                        ],
+                        "default": "todo",
+                        "description": "Task status",
+                        "example": "todo"
+                    },
+                    "parent_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Parent task ID for creating subtasks",
+                        "example": 123
+                    }
+                },
+                "required": [
+                    "title"
+                ]
+            },
+            "UpdateTaskRequest": {
+                "type": "object",
+                "title": "Update Task Request",
+                "description": "Schema for updating an existing task",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Task title",
+                        "maxLength": 255,
+                        "example": "Updated task title"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Task description",
+                        "example": "Updated task description"
+                    },
+                    "priority": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Priority level (1=Critical, 2=High, 3=Medium, 4=Low, 5=Lowest)",
+                        "example": 1
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "todo",
+                            "done"
+                        ],
+                        "description": "Task status",
+                        "example": "done"
+                    },
+                    "parent_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Parent task ID (use null to make it a root task)",
+                        "example": 456
+                    }
+                }
+            },
+            "Error": {
+                "type": "object",
+                "title": "Error Response",
+                "description": "Standard error response structure",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error type or category",
+                        "example": "Task not found"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Detailed error message",
+                        "example": "Task with ID 1 not found for user 1."
+                    }
+                },
+                "required": [
+                    "error",
+                    "message"
+                ]
+            },
+            "ValidationError": {
+                "type": "object",
+                "title": "Validation Error Response",
+                "description": "Response structure for validation errors",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error type",
+                        "example": "Validation failed"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "General error message",
+                        "example": "The provided data is invalid."
+                    },
+                    "errors": {
+                        "type": "object",
+                        "description": "Field-specific validation errors",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "example": {
+                            "title": [
+                                "The title field is required."
+                            ],
+                            "priority": [
+                                "The priority must be between 1 and 5."
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "error",
+                    "message",
+                    "errors"
+                ]
+            },
+            "PaginationMeta": {
+                "type": "object",
+                "title": "Pagination Metadata",
+                "description": "Pagination metadata for paginated responses",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of items in current page",
+                        "example": 15
+                    },
+                    "total": {
+                        "type": "integer",
+                        "description": "Total number of items across all pages",
+                        "example": 247
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "example": 15
+                    },
+                    "current_page": {
+                        "type": "integer",
+                        "description": "Current page number",
+                        "example": 3
+                    },
+                    "last_page": {
+                        "type": "integer",
+                        "description": "Last page number",
+                        "example": 17
+                    }
+                },
+                "required": [
+                    "count",
+                    "total",
+                    "per_page",
+                    "current_page",
+                    "last_page"
+                ]
+            },
+            "PaginationLinks": {
+                "type": "object",
+                "title": "Pagination Links",
+                "description": "Navigation links for paginated responses",
+                "properties": {
+                    "first": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL to first page",
+                        "example": "/api/v1/tasks?page=1"
+                    },
+                    "last": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL to last page",
+                        "example": "/api/v1/tasks?page=17"
+                    },
+                    "prev": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL to previous page",
+                        "example": "/api/v1/tasks?page=2"
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL to next page",
+                        "example": "/api/v1/tasks?page=4"
+                    }
+                }
+            },
+            "TaskStats": {
+                "type": "object",
+                "title": "Task Statistics",
+                "description": "Task statistics and analytics",
+                "properties": {
+                    "overview": {
+                        "type": "object",
+                        "description": "Task overview statistics",
+                        "properties": {
+                            "total_tasks": {
+                                "type": "integer",
+                                "description": "Total number of tasks",
+                                "example": 10
+                            },
+                            "completed_tasks": {
+                                "type": "integer",
+                                "description": "Number of completed tasks",
+                                "example": 7
+                            },
+                            "pending_tasks": {
+                                "type": "integer",
+                                "description": "Number of pending tasks",
+                                "example": 3
+                            },
+                            "completion_rate": {
+                                "type": "number",
+                                "format": "float",
+                                "description": "Completion rate percentage",
+                                "example": 70
+                            }
+                        }
+                    },
+                    "priority_distribution": {
+                        "type": "object",
+                        "description": "Tasks distributed by priority level",
+                        "properties": {
+                            "critical": {
+                                "type": "integer",
+                                "example": 2
+                            },
+                            "high": {
+                                "type": "integer",
+                                "example": 3
+                            },
+                            "medium": {
+                                "type": "integer",
+                                "example": 4
+                            },
+                            "low": {
+                                "type": "integer",
+                                "example": 1
+                            },
+                            "lowest": {
+                                "type": "integer",
+                                "example": 0
+                            }
+                        }
+                    }
+                },
+                "required": [
+                    "overview",
+                    "priority_distribution"
+                ]
+            }
+        },
+        "responses": {
+            "Unauthorized": {
+                "description": "Unauthorized - Authentication required",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "NotFound": {
+                "description": "Resource not found",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "BadRequest": {
+                "description": "Bad request - Invalid input or business rule violation",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "ValidationError": {
+                "description": "Validation failed",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
