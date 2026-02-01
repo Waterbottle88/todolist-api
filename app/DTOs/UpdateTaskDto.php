@@ -68,39 +68,12 @@ readonly class UpdateTaskDto
     }
 
     /**
-     * @return array
-     */
-    public function validate(): array
-    {
-        $errors = [];
-
-        if ($this->title !== null) {
-            if (empty(trim($this->title))) {
-                $errors[] = 'Title cannot be empty when provided.';
-            }
-
-            if (strlen($this->title) > 255) {
-                $errors[] = 'Title cannot exceed 255 characters.';
-            }
-        }
-
-        if ($this->description !== null && strlen($this->description) > 65535) {
-            $errors[] = 'Description cannot exceed 65535 characters.';
-        }
-
-        if ($this->parentId !== null && $this->parentId <= 0) {
-            $errors[] = 'Parent ID must be a positive integer when provided.';
-        }
-
-        return $errors;
-    }
-
-    /**
+     * @param string $field
      * @return bool
      */
-    public function isValid(): bool
+    public function wasProvided(string $field): bool
     {
-        return empty($this->validate());
+        return in_array($field, $this->providedFields);
     }
 
     /**

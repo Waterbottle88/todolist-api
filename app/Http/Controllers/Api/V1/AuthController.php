@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use App\Http\Requests\LoginRequest;
+use App\Http\Requests\RegisterRequest;
+use App\Http\Resources\UserResource;
+use App\Services\AuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
 
 /**
  * @OA\Tag(
@@ -22,6 +21,11 @@ use Illuminate\Validation\ValidationException;
  */
 class AuthController extends Controller
 {
+    public function __construct(
+        private readonly AuthService $authService
+    ) {
+    }
+
     /**
      * @OA\Post(
      *     path="/api/v1/auth/register",
@@ -55,52 +59,15 @@ class AuthController extends Controller
      *     )
      * )
      */
-    public function register(Request $request): JsonResponse
+    public function register(RegisterRequest $request): JsonResponse
     {
-        try {
-            $request->validate([
-                'name' => 'required|string|max:255',
-                'email' => 'required|string|email|max:255|unique:users',
-                'password' => 'required|string|min:8|confirmed',
-            ]);
+        $result = $this->authService->register($request->validated());
 
-            $user = User::create([
-                'name' => $request->name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-            ]);
-
-            $token = $user->createToken('auth-token')->plainTextToken;
-
-            return response()->json([
-                'message' => 'User registered successfully',
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'created_at' => $user->created_at->toISOString(),
-                ],
-                'token' => $token,
-            ], Response::HTTP_CREATED);
-
-        } catch (ValidationException $e) {
-            return response()->json([
-                'error' => 'Validation failed',
-                'message' => 'The provided data is invalid.',
-                'errors' => $e->errors(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-
-        } catch (\Exception $e) {
-            Log::error('User registration failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Registration failed',
-                'message' => 'An error occurred during registration. Please try again.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'message' => 'User registered successfully',
+            'user' => new UserResource($result['user']),
+            'token' => $result['token'],
+        ], Response::HTTP_CREATED);
     }
 
     /**
@@ -136,55 +103,22 @@ class AuthController extends Controller
      *     )
      * )
      */
-    public function login(Request $request): JsonResponse
+    public function login(LoginRequest $request): JsonResponse
     {
-        try {
-            $request->validate([
-                'email' => 'required|email',
-                'password' => 'required',
-            ]);
+        $result = $this->authService->login($request->validated());
 
-            if (!Auth::attempt($request->only('email', 'password'))) {
-                return response()->json([
-                    'error' => 'Invalid credentials',
-                    'message' => 'The provided email or password is incorrect.',
-                ], Response::HTTP_UNAUTHORIZED);
-            }
-
-            $user = Auth::user();
-            $token = $user->createToken('auth-token')->plainTextToken;
-
+        if (!$result) {
             return response()->json([
-                'message' => 'Login successful',
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'email_verified_at' => $user->email_verified_at?->toISOString(),
-                    'created_at' => $user->created_at->toISOString(),
-                ],
-                'token' => $token,
-            ]);
-
-        } catch (ValidationException $e) {
-            return response()->json([
-                'error' => 'Validation failed',
-                'message' => 'The provided data is invalid.',
-                'errors' => $e->errors(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-
-        } catch (\Exception $e) {
-            Log::error('User login failed', [
-                'email' => $request->email,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Login failed',
-                'message' => 'An error occurred during login. Please try again.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+                'error' => 'Invalid credentials',
+                'message' => 'The provided email or password is incorrect.',
+            ], Response::HTTP_UNAUTHORIZED);
         }
+
+        return response()->json([
+            'message' => 'Login successful',
+            'user' => new UserResource($result['user']),
+            'token' => $result['token'],
+        ]);
     }
 
     /**
@@ -214,26 +148,11 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
-        try {
-            $user = $request->user();
+        $this->authService->logout($request->user());
 
-            $user->currentAccessToken()->delete();
-            
-            return response()->json([
-                'message' => 'Logout successful',
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('User logout failed', [
-                'user_id' => $request->user()?->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Logout failed',
-                'message' => 'An error occurred during logout.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'message' => 'Logout successful',
+        ]);
     }
 
     /**
@@ -263,26 +182,11 @@ class AuthController extends Controller
      */
     public function logoutAll(Request $request): JsonResponse
     {
-        try {
-            $user = $request->user();
+        $this->authService->logoutAll($request->user());
 
-            $user->tokens()->delete();
-
-            return response()->json([
-                'message' => 'Logged out from all devices successfully',
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('User logout all failed', [
-                'user_id' => $request->user()?->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Logout failed',
-                'message' => 'An error occurred during logout.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'message' => 'Logged out from all devices successfully',
+        ]);
     }
 
     /**
@@ -310,17 +214,8 @@ class AuthController extends Controller
      */
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user();
-
         return response()->json([
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'email_verified_at' => $user->email_verified_at?->toISOString(),
-                'created_at' => $user->created_at->toISOString(),
-                'updated_at' => $user->updated_at->toISOString(),
-            ],
+            'user' => new UserResource($request->user()),
         ]);
     }
 
@@ -355,28 +250,11 @@ class AuthController extends Controller
      */
     public function refresh(Request $request): JsonResponse
     {
-        try {
-            $user = $request->user();
+        $token = $this->authService->refresh($request->user());
 
-            $user->currentAccessToken()->delete();
-
-            $token = $user->createToken('auth-token')->plainTextToken;
-
-            return response()->json([
-                'message' => 'Token refreshed successfully',
-                'token' => $token,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Token refresh failed', [
-                'user_id' => $request->user()?->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Token refresh failed',
-                'message' => 'An error occurred while refreshing the token.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'message' => 'Token refreshed successfully',
+            'token' => $token,
+        ]);
     }
 }

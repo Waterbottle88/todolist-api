@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\DTOs\CreateTaskDto;
+use App\DTOs\PaginatedResult;
 use App\DTOs\TaskFilterDto;
 use App\DTOs\TaskSortDto;
 use App\DTOs\UpdateTaskDto;
@@ -15,35 +16,29 @@ use App\Exceptions\TaskNotFoundException;
 use App\Exceptions\TaskValidationException;
 use App\Models\Task;
 use App\Repositories\TaskRepositoryInterface;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
+use Psr\Log\LoggerInterface;
 
 readonly class TaskService
 {
     public function __construct(
-        private TaskRepositoryInterface $taskRepository
+        private TaskRepositoryInterface $taskRepository,
+        private LoggerInterface $logger
     ) {
     }
 
     /**
+     * @param int $userId
      * @param TaskFilterDto $filters
      * @param TaskSortDto $sorts
      * @param int $perPage
-     * @return LengthAwarePaginator
-     * @throws TaskValidationException
+     * @return PaginatedResult
      */
     public function getPaginatedTasks(
+        int $userId,
         TaskFilterDto $filters,
         TaskSortDto $sorts,
         int $perPage = 15
-    ): LengthAwarePaginator {
-        $this->validateFilters($filters);
-        $this->validateSorts($sorts);
-
-        $userId = Auth::id();
-
+    ): PaginatedResult {
         return $this->taskRepository->getUserTasksPaginated(
             $userId,
             $filters->toArray(),
@@ -54,12 +49,12 @@ readonly class TaskService
 
     /**
      * @param int $taskId
+     * @param int $userId
      * @return Task
      * @throws TaskNotFoundException
      */
-    public function findTask(int $taskId): Task
+    public function findTask(int $taskId, int $userId): Task
     {
-        $userId = Auth::id();
         $task = $this->taskRepository->findByIdForUser($taskId, $userId);
 
         if (!$task) {
@@ -72,13 +67,10 @@ readonly class TaskService
     /**
      * @param CreateTaskDto $dto
      * @return Task
-     * @throws TaskValidationException
      * @throws TaskHierarchyException
      */
     public function createTask(CreateTaskDto $dto): Task
     {
-        $this->validateCreateDto($dto);
-
         if ($dto->parentId) {
             $this->validateParentTask($dto->parentId, $dto->userId);
         }
@@ -88,18 +80,22 @@ readonly class TaskService
 
     /**
      * @param int $taskId
+     * @param int $userId
      * @param UpdateTaskDto $dto
      * @return Task
      * @throws TaskNotFoundException
      * @throws TaskValidationException
      * @throws TaskHierarchyException
      */
-    public function updateTask(int $taskId, UpdateTaskDto $dto): Task
+    public function updateTask(int $taskId, int $userId, UpdateTaskDto $dto): Task
     {
-        $task = $this->findTask($taskId);
-        $this->validateUpdateDto($dto);
+        $task = $this->findTask($taskId, $userId);
 
-        if (array_key_exists('parentId', get_object_vars($dto))) {
+        if (!$dto->hasUpdates()) {
+            throw new TaskValidationException(['No updates provided']);
+        }
+
+        if ($dto->wasProvided('parent_id')) {
             $this->validateParentUpdate($task, $dto->parentId);
         }
 
@@ -108,27 +104,24 @@ readonly class TaskService
 
     /**
      * @param int $taskId
+     * @param int $userId
      * @return Task
      * @throws TaskNotFoundException
      * @throws TaskCompletionException
      */
-    public function completeTask(int $taskId): Task
+    public function completeTask(int $taskId, int $userId): Task
     {
-        $task = $this->findTask($taskId);
+        $task = $this->findTask($taskId, $userId);
 
         if ($task->isCompleted()) {
-            Log::info('Task already completed', ['task_id' => $taskId]);
+            $this->logger->info('Task already completed', ['task_id' => $taskId]);
             return $task;
-        }
-
-        if ($this->taskRepository->hasIncompleteChildren($task)) {
-            throw new TaskCompletionException('All subtasks must be completed first');
         }
 
         $success = $this->taskRepository->markAsCompleted($task);
 
         if (!$success) {
-            throw new TaskCompletionException('Failed to mark task as completed');
+            throw new TaskCompletionException('All subtasks must be completed first');
         }
 
         return $task->fresh();
@@ -136,13 +129,14 @@ readonly class TaskService
 
     /**
      * @param int $taskId
+     * @param int $userId
      * @return bool
      * @throws TaskNotFoundException
      * @throws TaskDeletionException
      */
-    public function deleteTask(int $taskId): bool
+    public function deleteTask(int $taskId, int $userId): bool
     {
-        $task = $this->findTask($taskId);
+        $task = $this->findTask($taskId, $userId);
 
         if ($task->isCompleted()) {
             throw new TaskDeletionException('Completed tasks cannot be deleted');
@@ -152,87 +146,36 @@ readonly class TaskService
     }
 
     /**
+     * @param int $userId
      * @return array<string, mixed>
      */
-    public function getTaskStats(): array
+    public function getTaskStats(int $userId): array
     {
-        $userId = Auth::id();
-
         return $this->taskRepository->getTaskStats($userId);
     }
 
     /**
+     * @param int $userId
      * @param string $searchTerm
-     * @return Collection<int, Task>
-     * @throws TaskValidationException
+     * @param int $perPage
+     * @return PaginatedResult
      */
-    public function searchTasks(string $searchTerm): Collection
+    public function searchTasks(int $userId, string $searchTerm, int $perPage = 15): PaginatedResult
     {
-        if (strlen(trim($searchTerm)) < 2) {
-            throw new TaskValidationException(['Search term must be at least 2 characters long']);
-        }
-
-        $userId = Auth::id();
-
-        return $this->taskRepository->searchTasks($userId, trim($searchTerm));
+        return $this->taskRepository->searchTasks($userId, trim($searchTerm), $perPage);
     }
 
     /**
      * @param int $parentId
-     * @return Collection<int, Task>
+     * @param int $userId
+     * @return array
      * @throws TaskNotFoundException
      */
-    public function getChildTasks(int $parentId): Collection
+    public function getChildTasks(int $parentId, int $userId): array
     {
-        $userId = Auth::id();
-
-        $this->findTask($parentId);
+        $this->findTask($parentId, $userId);
 
         return $this->taskRepository->getChildTasks($parentId, $userId);
-    }
-
-    /**
-     * @throws TaskValidationException
-     */
-    private function validateFilters(TaskFilterDto $filters): void
-    {
-        if (!$filters->isValid()) {
-            throw new TaskValidationException($filters->validate());
-        }
-    }
-
-    /**
-     * @throws TaskValidationException
-     */
-    private function validateSorts(TaskSortDto $sorts): void
-    {
-        if (!$sorts->isValid()) {
-            throw new TaskValidationException($sorts->validate());
-        }
-    }
-
-    /**
-     * @throws TaskValidationException
-     */
-    private function validateCreateDto(CreateTaskDto $dto): void
-    {
-        if (!$dto->isValid()) {
-            throw new TaskValidationException($dto->validate());
-        }
-    }
-
-    /**
-     * @throws TaskValidationException
-     */
-    private function validateUpdateDto(UpdateTaskDto $dto): void
-    {
-        if (!$dto->isValid()) {
-            throw new TaskValidationException($dto->validate());
-        }
-
-        if (!$dto->hasUpdates()) {
-            throw new TaskValidationException(['No updates provided']);
-        }
     }
 
     /**

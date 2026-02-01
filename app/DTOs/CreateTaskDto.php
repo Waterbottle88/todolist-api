@@ -50,41 +50,4 @@ readonly class CreateTaskDto
         ];
     }
 
-    /**
-     * @return array
-     */
-    public function validate(): array
-    {
-        $errors = [];
-
-        if (empty(trim($this->title))) {
-            $errors[] = 'Title is required and cannot be empty.';
-        }
-
-        if (strlen($this->title) > 255) {
-            $errors[] = 'Title cannot exceed 255 characters.';
-        }
-
-        if ($this->description !== null && strlen($this->description) > 65535) {
-            $errors[] = 'Description cannot exceed 65535 characters.';
-        }
-
-        if ($this->userId <= 0) {
-            $errors[] = 'User ID must be a positive integer.';
-        }
-
-        if ($this->parentId !== null && $this->parentId <= 0) {
-            $errors[] = 'Parent ID must be a positive integer when provided.';
-        }
-
-        return $errors;
-    }
-
-    /**
-     * @return bool
-     */
-    public function isValid(): bool
-    {
-        return empty($this->validate());
-    }
 }

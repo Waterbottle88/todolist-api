@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\DTOs\PaginatedResult;
 use App\Models\Task;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Database\Eloquent\Collection;
 
 interface TaskRepositoryInterface
 {
@@ -15,20 +14,20 @@ interface TaskRepositoryInterface
      * @param array<string, mixed> $filters
      * @param array<string, string> $sorts
      * @param int $perPage
-     * @return LengthAwarePaginator
+     * @return PaginatedResult
      */
     public function getUserTasksPaginated(
         int $userId,
         array $filters = [],
         array $sorts = [],
         int $perPage = 15
-    ): LengthAwarePaginator;
+    ): PaginatedResult;
 
     /**
      * @param int $userId
-     * @return Collection<int, Task>
+     * @return array<int, Task>
      */
-    public function getUserTasks(int $userId): Collection;
+    public function getUserTasks(int $userId): array;
 
     /**
      * @param int $taskId
@@ -65,22 +64,23 @@ interface TaskRepositoryInterface
     /**
      * @param int $userId
      * @param string $searchTerm
-     * @return Collection<int, Task>
+     * @param int $perPage
+     * @return PaginatedResult
      */
-    public function searchTasks(int $userId, string $searchTerm): Collection;
+    public function searchTasks(int $userId, string $searchTerm, int $perPage = 15): PaginatedResult;
 
     /**
      * @param int $userId
-     * @return Collection<int, Task>
+     * @return array<int, Task>
      */
-    public function getRootTasks(int $userId): Collection;
+    public function getRootTasks(int $userId): array;
 
     /**
      * @param int $parentId
      * @param int $userId
-     * @return Collection<int, Task>
+     * @return array<int, Task>
      */
-    public function getChildTasks(int $parentId, int $userId): Collection;
+    public function getChildTasks(int $parentId, int $userId): array;
 
     /**
      * @param Task $task
@@ -90,7 +90,7 @@ interface TaskRepositoryInterface
 
     /**
      * @param int $userId
-     * @return array<string, int>
+     * @return array<string, mixed>
      */
     public function getTaskStats(int $userId): array;
 }

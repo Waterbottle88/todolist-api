@@ -139,34 +139,6 @@ readonly class TaskSortDto
     }
 
     /**
-     * @return array
-     */
-    public function validate(): array
-    {
-        $errors = [];
-
-        foreach ($this->sorts as $field => $direction) {
-            if (!self::isValidField($field)) {
-                $errors[] = "Invalid sort field: {$field}. Allowed fields: " . implode(', ', self::getAllowedFields());
-            }
-
-            if (!self::isValidDirection($direction)) {
-                $errors[] = "Invalid sort direction: {$direction}. Allowed directions: " . implode(', ', self::getAllowedDirections());
-            }
-        }
-
-        return $errors;
-    }
-
-    /**
-     * @return bool
-     */
-    public function isValid(): bool
-    {
-        return empty($this->validate());
-    }
-
-    /**
      * @return string
      */
     public function getPrimaryField(): string

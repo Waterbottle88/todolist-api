@@ -129,6 +129,22 @@ class TaskIndexRequest extends FormRequest
     /**
      * @return void
      */
+    public function withValidator(\Illuminate\Validation\Validator $validator): void
+    {
+        $validator->after(function (\Illuminate\Validation\Validator $validator) {
+            if ($this->boolean('root_tasks_only') && $this->boolean('subtasks_only')) {
+                $validator->errors()->add('root_tasks_only', 'Cannot filter for both root tasks only and subtasks only simultaneously.');
+            }
+
+            if ($this->boolean('root_tasks_only') && $this->filled('parent_id')) {
+                $validator->errors()->add('root_tasks_only', 'Cannot specify parent ID when filtering for root tasks only.');
+            }
+        });
+    }
+
+    /**
+     * @return void
+     */
     protected function prepareForValidation(): void
     {
         if (!$this->has('per_page')) {

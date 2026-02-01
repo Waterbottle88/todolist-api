@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\DTOs\CreateTaskDto;
+use App\DTOs\PaginatedResult;
 use App\DTOs\TaskFilterDto;
 use App\DTOs\TaskSortDto;
 use App\DTOs\UpdateTaskDto;
-use App\Exceptions\TaskException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CompleteTaskRequest;
+use App\Http\Requests\SearchTaskRequest;
 use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\TaskIndexRequest;
 use App\Http\Requests\UpdateTaskRequest;
-use App\Http\Resources\TaskCollection;
 use App\Http\Resources\TaskResource;
 use App\Http\Resources\TaskStatsResource;
 use App\Services\TaskService;
@@ -159,32 +159,13 @@ class TaskController extends Controller
      */
     public function index(TaskIndexRequest $request): JsonResponse
     {
-        try {
-            $filters = TaskFilterDto::fromArray($request->validated());
-            $sorts = TaskSortDto::fromInput($request->input('sort'));
-            $perPage = (int) $request->input('per_page', 15);
+        $filters = TaskFilterDto::fromArray($request->validated());
+        $sorts = TaskSortDto::fromInput($request->input('sort'));
+        $perPage = (int) $request->input('per_page', 15);
 
-            $tasks = $this->taskService->getPaginatedTasks($filters, $sorts, $perPage);
+        $result = $this->taskService->getPaginatedTasks(auth()->id(), $filters, $sorts, $perPage);
 
-            return response()->json(new TaskCollection($tasks));
-
-        } catch (TaskException $e) {
-            return response()->json([
-                'error' => 'Failed to retrieve tasks',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error retrieving tasks', [
-                'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while retrieving tasks.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return $this->paginatedResponse($result);
     }
 
     /**
@@ -233,29 +214,10 @@ class TaskController extends Controller
      */
     public function store(StoreTaskRequest $request): JsonResponse
     {
-        try {
-            $dto = CreateTaskDto::fromArray($request->validated());
-            $task = $this->taskService->createTask($dto);
+        $dto = CreateTaskDto::fromArray($request->validated());
+        $task = $this->taskService->createTask($dto);
 
-            return response()->json(['data' => new TaskResource($task)], Response::HTTP_CREATED);
-
-        } catch (TaskException $e) {
-            return response()->json([
-                'error' => 'Failed to create task',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error creating task', [
-                'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while creating the task.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json(['data' => new TaskResource($task)], Response::HTTP_CREATED);
     }
 
     /**
@@ -300,29 +262,9 @@ class TaskController extends Controller
      */
     public function show(int $task): JsonResponse
     {
-        try {
-            $taskModel = $this->taskService->findTask($task);
+        $taskModel = $this->taskService->findTask($task, auth()->id());
 
-            return response()->json(['data' => new TaskResource($taskModel)]);
-
-        } catch (TaskException $e) {
-            return response()->json([
-                'error' => 'Task not found',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error retrieving task', [
-                'user_id' => auth()->id(),
-                'task_id' => $task,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while retrieving the task.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json(['data' => new TaskResource($taskModel)]);
     }
 
     /**
@@ -382,30 +324,10 @@ class TaskController extends Controller
      */
     public function update(UpdateTaskRequest $request, int $task): JsonResponse
     {
-        try {
-            $dto = UpdateTaskDto::fromArray($request->validated());
-            $task = $this->taskService->updateTask($task, $dto);
+        $dto = UpdateTaskDto::fromArray($request->validated());
+        $updatedTask = $this->taskService->updateTask($task, auth()->id(), $dto);
 
-            return response()->json(['data' => new TaskResource($task)]);
-
-        } catch (TaskException $e) {
-            return response()->json([
-                'error' => 'Failed to update task',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error updating task', [
-                'user_id' => auth()->id(),
-                'task_id' => $task,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while updating the task.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json(['data' => new TaskResource($updatedTask)]);
     }
 
     /**
@@ -450,43 +372,16 @@ class TaskController extends Controller
      */
     public function destroy(int $task): JsonResponse
     {
-        try {
-            $this->taskService->deleteTask($task);
+        $this->taskService->deleteTask($task, auth()->id());
 
-            Log::info('Task deleted successfully', [
-                'user_id' => auth()->id(),
-                'task_id' => $task,
-            ]);
+        Log::info('Task deleted successfully', [
+            'user_id' => auth()->id(),
+            'task_id' => $task,
+        ]);
 
-            return response()->json([
-                'message' => 'Task deleted successfully.',
-            ]);
-
-        } catch (TaskException $e) {
-            Log::warning('Task deletion failed', [
-                'user_id' => auth()->id(),
-                'task_id' => $task,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Failed to delete task',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error deleting task', [
-                'user_id' => auth()->id(),
-                'task_id' => $task,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while deleting the task.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'message' => 'Task deleted successfully.',
+        ]);
     }
 
     /**
@@ -537,33 +432,12 @@ class TaskController extends Controller
      */
     public function complete(CompleteTaskRequest $request, int $task): JsonResponse
     {
-        try {
-            $task = $this->taskService->completeTask($task);
+        $completedTask = $this->taskService->completeTask($task, auth()->id());
 
-            return response()->json([
-                'data' => new TaskResource($task),
-                'message' => 'Task marked as completed successfully.',
-            ]);
-
-        } catch (TaskException $e) {
-            return response()->json([
-                'error' => 'Failed to complete task',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error completing task', [
-                'user_id' => auth()->id(),
-                'task_id' => $task,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while completing the task.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'data' => new TaskResource($completedTask),
+            'message' => 'Task marked as completed successfully.',
+        ]);
     }
 
     /**
@@ -596,25 +470,11 @@ class TaskController extends Controller
      */
     public function stats(): JsonResponse
     {
-        try {
-            $stats = $this->taskService->getTaskStats();
+        $stats = $this->taskService->getTaskStats(auth()->id());
 
-            return response()->json([
-                'data' => new TaskStatsResource($stats)
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error retrieving task statistics', [
-                'user_id' => auth()->id(),
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while retrieving task statistics.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'data' => new TaskStatsResource($stats)
+        ]);
     }
 
     /**
@@ -657,43 +517,13 @@ class TaskController extends Controller
      *     security={{"sanctum": {}}}
      * )
      */
-    public function search(Request $request): JsonResponse
+    public function search(SearchTaskRequest $request): JsonResponse
     {
-        $request->validate([
-            'q' => 'required|string|min:2|max:255',
-        ]);
+        $searchTerm = $request->input('q');
+        $perPage = (int) $request->input('per_page', 15);
+        $result = $this->taskService->searchTasks(auth()->id(), $searchTerm, $perPage);
 
-        try {
-            $searchTerm = $request->input('q');
-            $tasks = $this->taskService->searchTasks($searchTerm);
-
-            return response()->json(new TaskCollection($tasks));
-
-        } catch (TaskException $e) {
-            Log::warning('Task search failed', [
-                'user_id' => auth()->id(),
-                'search_term' => $request->input('q'),
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Search failed',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error during task search', [
-                'user_id' => auth()->id(),
-                'search_term' => $request->input('q'),
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred during search.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return $this->paginatedResponse($result);
     }
 
     /**
@@ -738,35 +568,31 @@ class TaskController extends Controller
      */
     public function children(int $task): JsonResponse
     {
-        try {
-            $children = $this->taskService->getChildTasks($task);
+        $children = $this->taskService->getChildTasks($task, auth()->id());
 
-            return response()->json(new TaskCollection($children));
+        return response()->json([
+            'data' => TaskResource::collection($children),
+        ]);
+    }
 
-        } catch (TaskException $e) {
-            Log::warning('Failed to retrieve task children', [
-                'user_id' => auth()->id(),
-                'parent_task_id' => $task,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => 'Failed to retrieve task children',
-                'message' => $e->getMessage(),
-            ], $e->getStatusCode());
-
-        } catch (\Exception $e) {
-            Log::error('Unexpected error retrieving task children', [
-                'user_id' => auth()->id(),
-                'parent_task_id' => $task,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An unexpected error occurred while retrieving task children.',
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+    private function paginatedResponse(PaginatedResult $result): JsonResponse
+    {
+        return response()->json([
+            'data' => TaskResource::collection($result->items),
+            'links' => [
+                'first' => null,
+                'last' => null,
+                'prev' => null,
+                'next' => null,
+            ],
+            'meta' => [
+                'current_page' => $result->currentPage,
+                'from' => $result->from,
+                'last_page' => $result->lastPage,
+                'per_page' => $result->perPage,
+                'to' => $result->to,
+                'total' => $result->total,
+            ],
+        ]);
     }
 }

@@ -93,41 +93,4 @@ readonly class TaskFilterDto
         return $filters;
     }
 
-    /**
-     * @return array
-     */
-    public function validate(): array
-    {
-        $errors = [];
-
-        if ($this->search !== null && strlen($this->search) < 2) {
-            $errors[] = 'Search term must be at least 2 characters long.';
-        }
-
-        if ($this->search !== null && strlen($this->search) > 255) {
-            $errors[] = 'Search term cannot exceed 255 characters.';
-        }
-
-        if ($this->parentId !== null && $this->parentId <= 0) {
-            $errors[] = 'Parent ID must be a positive integer when provided.';
-        }
-
-        if ($this->rootTasksOnly && $this->subtasksOnly) {
-            $errors[] = 'Cannot filter for both root tasks only and subtasks only simultaneously.';
-        }
-
-        if ($this->rootTasksOnly && $this->parentId !== null) {
-            $errors[] = 'Cannot specify parent ID when filtering for root tasks only.';
-        }
-
-        return $errors;
-    }
-
-    /**
-     * @return bool
-     */
-    public function isValid(): bool
-    {
-        return empty($this->validate());
-    }
 }

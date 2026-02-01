@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -41,13 +42,8 @@ class UserController extends Controller
      */
     public function show(Request $request): JsonResponse
     {
-        return response()->json([
-            'id' => $request->user()->id,
-            'name' => $request->user()->name,
-            'email' => $request->user()->email,
-            'email_verified_at' => $request->user()->email_verified_at?->toISOString(),
-            'created_at' => $request->user()->created_at?->toISOString(),
-            'updated_at' => $request->user()->updated_at?->toISOString(),
-        ]);
+        return response()->json(
+            (new UserResource($request->user()))->resolve()
+        );
     }
 }

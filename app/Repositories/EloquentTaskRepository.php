@@ -4,49 +4,60 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\DTOs\PaginatedResult;
 use App\Models\Task;
 use App\Enums\TaskStatus;
 use App\Enums\TaskPriority;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 class EloquentTaskRepository implements TaskRepositoryInterface
 {
+    private const array DEFAULT_RELATIONS = ['parent', 'children'];
 
     /**
      * @param int $userId
      * @param array $filters
      * @param array $sorts
      * @param int $perPage
-     * @return LengthAwarePaginator
+     * @return PaginatedResult
      */
     public function getUserTasksPaginated(
         int $userId,
         array $filters = [],
         array $sorts = [],
         int $perPage = 15
-    ): LengthAwarePaginator {
-        $query = Task::forUser($userId)->with(['parent', 'children']);
+    ): PaginatedResult {
+        $query = Task::forUser($userId)->with(self::DEFAULT_RELATIONS);
 
         $this->applyFilters($query, $filters);
 
         $this->applySorting($query, $sorts);
 
-        return $query->paginate($perPage);
+        $paginator = $query->paginate($perPage);
+
+        return new PaginatedResult(
+            items: $paginator->items(),
+            total: $paginator->total(),
+            perPage: $paginator->perPage(),
+            currentPage: $paginator->currentPage(),
+            lastPage: $paginator->lastPage(),
+            from: $paginator->firstItem(),
+            to: $paginator->lastItem(),
+        );
     }
 
     /**
      * @param int $userId
-     * @return Collection
+     * @return array<int, Task>
      */
-    public function getUserTasks(int $userId): Collection
+    public function getUserTasks(int $userId): array
     {
         return Task::forUser($userId)
-            ->with(['parent', 'children'])
+            ->with(self::DEFAULT_RELATIONS)
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->all();
     }
 
     /**
@@ -57,7 +68,7 @@ class EloquentTaskRepository implements TaskRepositoryInterface
     public function findByIdForUser(int $taskId, int $userId): ?Task
     {
         return Task::forUser($userId)
-            ->with(['parent', 'children'])
+            ->with(self::DEFAULT_RELATIONS)
             ->find($taskId);
     }
 
@@ -69,7 +80,7 @@ class EloquentTaskRepository implements TaskRepositoryInterface
     {
         return DB::transaction(function () use ($data) {
             $task = Task::create($data);
-            $task->load(['parent', 'children']);
+            $task->load(self::DEFAULT_RELATIONS);
             return $task;
         });
     }
@@ -83,7 +94,7 @@ class EloquentTaskRepository implements TaskRepositoryInterface
     {
         return DB::transaction(function () use ($task, $data) {
             $task->update($data);
-            $task->load(['parent', 'children']);
+            $task->load(self::DEFAULT_RELATIONS);
             return $task;
         });
     }
@@ -95,7 +106,6 @@ class EloquentTaskRepository implements TaskRepositoryInterface
     public function delete(Task $task): bool
     {
         return DB::transaction(function () use ($task) {
-            // First delete all children recursively
             $this->deleteTaskAndChildren($task);
             return true;
         });
@@ -107,54 +117,79 @@ class EloquentTaskRepository implements TaskRepositoryInterface
      */
     public function markAsCompleted(Task $task): bool
     {
-        if (!$task->allChildrenCompleted()) {
-            return false;
-        }
-
         return DB::transaction(function () use ($task) {
-            return $task->markAsCompleted();
+            $task = Task::lockForUpdate()->find($task->id);
+
+            $descendantIds = $this->collectDescendantIds($task->id);
+
+            if (!empty($descendantIds)) {
+                $hasIncomplete = Task::whereIn('id', $descendantIds)
+                    ->where('status', TaskStatus::TODO)
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($hasIncomplete) {
+                    return false;
+                }
+            }
+
+            $task->status = TaskStatus::DONE;
+            return $task->save();
         });
     }
 
     /**
      * @param int $userId
      * @param string $searchTerm
-     * @return Collection
+     * @param int $perPage
+     * @return PaginatedResult
      */
-    public function searchTasks(int $userId, string $searchTerm): Collection
+    public function searchTasks(int $userId, string $searchTerm, int $perPage = 15): PaginatedResult
     {
-        return Task::forUser($userId)
+        $paginator = Task::forUser($userId)
             ->search($searchTerm)
-            ->with(['parent', 'children'])
+            ->with(self::DEFAULT_RELATIONS)
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->paginate($perPage);
+
+        return new PaginatedResult(
+            items: $paginator->items(),
+            total: $paginator->total(),
+            perPage: $paginator->perPage(),
+            currentPage: $paginator->currentPage(),
+            lastPage: $paginator->lastPage(),
+            from: $paginator->firstItem(),
+            to: $paginator->lastItem(),
+        );
     }
 
     /**
      * @param int $userId
-     * @return Collection
+     * @return array<int, Task>
      */
-    public function getRootTasks(int $userId): Collection
+    public function getRootTasks(int $userId): array
     {
         return Task::forUser($userId)
             ->rootTasks()
-            ->with(['children', 'creator', 'updater'])
+            ->with(self::DEFAULT_RELATIONS)
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->all();
     }
 
     /**
      * @param int $parentId
      * @param int $userId
-     * @return Collection
+     * @return array<int, Task>
      */
-    public function getChildTasks(int $parentId, int $userId): Collection
+    public function getChildTasks(int $parentId, int $userId): array
     {
         return Task::forUser($userId)
             ->where('parent_id', $parentId)
-            ->with(['children'])
+            ->with(self::DEFAULT_RELATIONS)
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->all();
     }
 
     /**
@@ -163,14 +198,20 @@ class EloquentTaskRepository implements TaskRepositoryInterface
      */
     public function hasIncompleteChildren(Task $task): bool
     {
-        return $task->children()
+        $descendantIds = $this->collectDescendantIds($task->id);
+
+        if (empty($descendantIds)) {
+            return false;
+        }
+
+        return Task::whereIn('id', $descendantIds)
             ->where('status', TaskStatus::TODO)
             ->exists();
     }
 
     /**
      * @param int $userId
-     * @return array|int[]
+     * @return array<string, mixed>
      */
     public function getTaskStats(int $userId): array
     {
@@ -193,7 +234,6 @@ class EloquentTaskRepository implements TaskRepositoryInterface
             ->groupBy('priority')
             ->get()
             ->mapWithKeys(function ($item) {
-                // Convert TaskPriority enum to its integer value for the key
                 $priorityValue = $item->priority instanceof \BackedEnum ? $item->priority->value : $item->priority;
                 return [$priorityValue => $item->count];
             })
@@ -303,12 +343,31 @@ class EloquentTaskRepository implements TaskRepositoryInterface
      */
     private function deleteTaskAndChildren(Task $task): void
     {
-        $children = $task->children()->get();
+        $descendantIds = $this->collectDescendantIds($task->id);
+        if (!empty($descendantIds)) {
+            Task::whereIn('id', $descendantIds)->delete();
+        }
+        $task->delete();
+    }
 
-        foreach ($children as $child) {
-            $this->deleteTaskAndChildren($child);
+    private function collectDescendantIds(int $parentId): array
+    {
+        $allIds = [];
+        $currentParentIds = [$parentId];
+
+        while (!empty($currentParentIds)) {
+            $childIds = Task::whereIn('parent_id', $currentParentIds)
+                ->pluck('id')
+                ->all();
+
+            if (empty($childIds)) {
+                break;
+            }
+
+            $allIds = array_merge($allIds, $childIds);
+            $currentParentIds = $childIds;
         }
 
-        $task->delete();
+        return $allIds;
     }
 }

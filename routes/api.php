@@ -25,8 +25,8 @@ Route::prefix('v1/auth')
     ->name('api.v1.auth.')
     ->controller(AuthController::class)
     ->group(function () {
-        Route::post('/register', 'register')->name('register');
-        Route::post('/login', 'login')->name('login');
+        Route::post('/register', 'register')->middleware('throttle:3,1')->name('register');
+        Route::post('/login', 'login')->middleware('throttle:5,1')->name('login');
 
         Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
             Route::post('/logout', 'logout')->name('logout');
@@ -66,6 +66,6 @@ Route::fallback(function () {
     return response()->json([
         'error' => 'Endpoint not found',
         'message' => 'The requested API endpoint does not exist.',
-        'documentation' => env('APP_URL') . '/docs/api',
+        'documentation' => config('app.url') . '/docs/api',
     ], 404);
 });

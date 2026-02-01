@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 
 /**
  * Task Model
@@ -32,7 +31,6 @@ use Illuminate\Support\Collection;
  * @property-read User $user
  * @property-read Task|null $parent
  * @property-read Collection<int, Task> $children
- * @property-read Collection<int, Task> $descendants
  */
 class Task extends Model
 {
@@ -104,22 +102,6 @@ class Task extends Model
     /**
      * @return BelongsTo
      */
-    public function creator(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
-
-    /**
-     * @return BelongsTo
-     */
-    public function updater(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
-
-    /**
-     * @return BelongsTo
-     */
     public function parent(): BelongsTo
     {
         return $this->belongsTo(Task::class, 'parent_id');
@@ -131,14 +113,6 @@ class Task extends Model
     public function children(): HasMany
     {
         return $this->hasMany(Task::class, 'parent_id');
-    }
-
-    /**
-     * @return HasMany
-     */
-    public function descendants(): HasMany
-    {
-        return $this->children()->with('descendants');
     }
 
     /**
@@ -221,14 +195,6 @@ class Task extends Model
     /**
      * @return bool
      */
-    public function hasChildren(): bool
-    {
-        return $this->children()->exists();
-    }
-
-    /**
-     * @return bool
-     */
     public function isRootTask(): bool
     {
         return is_null($this->parent_id);
@@ -242,89 +208,4 @@ class Task extends Model
         return !is_null($this->parent_id);
     }
 
-    /**
-     * @return bool
-     */
-    public function allChildrenCompleted(): bool
-    {
-        if (!$this->hasChildren()) {
-            return true;
-        }
-
-        return $this->children()
-            ->where('status', TaskStatus::TODO)
-            ->doesntExist();
-    }
-
-    /**
-     * @return int
-     */
-    public function getDepth(): int
-    {
-        $depth = 0;
-        $current = $this;
-
-        while ($current->parent) {
-            $depth++;
-            $current = $current->parent;
-        }
-
-        return $depth;
-    }
-
-    /**
-     * @return Collection
-     */
-    public function getAncestors(): Collection
-    {
-        $ancestors = collect();
-        $current = $this->parent;
-
-        while ($current) {
-            $ancestors->prepend($current);
-            $current = $current->parent;
-        }
-
-        return $ancestors;
-    }
-
-    /**
-     * @return $this
-     */
-    public function getRootTask(): Task
-    {
-        $current = $this;
-
-        while ($current->parent) {
-            $current = $current->parent;
-        }
-
-        return $current;
-    }
-
-    /**
-     * @return bool
-     */
-    public function markAsCompleted(): bool
-    {
-        if (!$this->allChildrenCompleted()) {
-            return false;
-        }
-
-        $this->status = TaskStatus::DONE;
-        $this->completed_at = now();
-
-        return $this->save();
-    }
-
-    /**
-     * @return bool
-     */
-    public function markAsPending(): bool
-    {
-        $this->status = TaskStatus::TODO;
-        $this->completed_at = null;
-
-        return $this->save();
-    }
 }
